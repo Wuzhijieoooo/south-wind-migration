@@ -80,4 +80,25 @@ describe('RunModel', () => {
     run.applyUpgrade(first.id);
     expect(run.getUpgradeChoices().some((upgrade) => upgrade.id === first.id)).toBe(false);
   });
+
+  it('applies the long-wing cap and immediate recovery', () => {
+    const run = new RunModel(13);
+    run.energy = 62;
+    run.applyUpgrade('long-wing');
+    expect(run.maxEnergy).toBe(120);
+    expect(run.energy).toBe(82);
+  });
+
+  it('rewards a low-loss risk window with follow-season', () => {
+    const run = new RunModel(14);
+    run.startRegion(0);
+    run.applyUpgrade('follow-season');
+    run.energy = 70;
+    run.cohesion = 90;
+    run.update(0.2, { riskPressure: 0.2 });
+    run.update(0.2, { riskPressure: 0 });
+    expect(run.energy).toBeGreaterThan(74);
+    expect(run.cohesion).toBeGreaterThan(99);
+    expect(run.eventLog.some((event) => event.type === 'followSeasonTriggered')).toBe(true);
+  });
 });
