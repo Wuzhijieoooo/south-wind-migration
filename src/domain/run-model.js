@@ -43,10 +43,6 @@ export class RunModel {
     return RUN_CONFIG.gatherEnergyDrain * (this.hasUpgrade('fold-wing') ? 0.6 : 1);
   }
 
-  get rescueDuration() {
-    return this.hasUpgrade('wait-together') && !this.waitTogetherUsed ? 5 : RUN_CONFIG.stragglerDuration;
-  }
-
   hasUpgrade(id) {
     return this.upgradeIds.includes(id);
   }
@@ -107,19 +103,42 @@ export class RunModel {
     return true;
   }
 
-  chooseRoute(kind = 'safe') {
-    if (!this.region || this.routeResolved) return null;
+  getRouteOption(kind = 'safe') {
+    if (!this.region) return null;
     const safe = kind !== 'risky';
     const definition = safe ? this.region.safeRoute : this.region.riskyRoute;
     const costScale = safe && this.hasUpgrade('old-river') ? 0.5 : 1;
     const energyCost = definition.energyCost * costScale;
-    this.energy = clamp(this.energy - energyCost, 0, this.maxEnergy);
-    this.riskMultiplier = definition.riskMultiplier;
-    this.regionDurationBonus = definition.timeCost;
+    return {
+      kind: safe ? 'safe' : 'risky',
+      ...definition,
+      energyCost,
+      detail: safe && energyCost !== definition.energyCost
+        ? `绕行 · 体力 -${energyCost}`
+        : definition.detail,
+    };
+  }
+
+  chooseRoute(kind = 'safe') {
+    if (!this.region || this.routeResolved) return null;
+    const route = this.getRouteOption(kind);
+    this.energy = clamp(this.energy - route.energyCost, 0, this.maxEnergy);
+    this.riskMultiplier = route.riskMultiplier;
+    this.regionDurationBonus = route.timeCost;
     this.routeResolved = true;
-    this.route = { kind: safe ? 'safe' : 'risky', ...definition, energyCost };
-    this.routes.push({ regionId: this.region.id, routeId: definition.id, kind: this.route.kind });
-    this.record('routeChosen', { regionId: this.region.id, routeId: definition.id, kind: this.route.kind, energyCost });
+    this.route = route;
+    this.routes.push({
+      regionId: this.region.id,
+      routeId: route.id,
+      routeName: route.name,
+      kind: route.kind,
+    });
+    this.record('routeChosen', {
+      regionId: this.region.id,
+      routeId: route.id,
+      kind: route.kind,
+      energyCost: route.energyCost,
+    });
     return this.route;
   }
 
@@ -127,8 +146,10 @@ export class RunModel {
     if (![PHASES.PRELUDE, PHASES.FLIGHT].includes(this.phase) || this.failed) return;
     this.advanceClock(dt);
 
+    const energyAtStart = this.energy;
     const collapsedAtStart = this.cohesion <= 0;
-    const gathering = Boolean(context.gathering) && this.energy > 0;
+    const gatheringRequested = Boolean(context.gathering);
+    const gathering = gatheringRequested && this.energy > 0;
     const riskPressure = clamp(context.riskPressure ?? 0, 0, 1.5);
     const sharpness = clamp(context.sharpness ?? 0, 0, 1);
     const safeCurrent = Boolean(context.safeCurrent);
@@ -153,9 +174,9 @@ export class RunModel {
 
     if ((collapsedAtStart || this.cohesion <= 0) && !this.straggler) {
       this.cohesion = 0;
-      this.startStraggler();
+      this.startStraggler(Math.max(energyAtStart, this.energy));
     }
-    if (this.straggler) this.updateStraggler(dt, gathering);
+    if (this.straggler) this.updateStraggler(dt, gatheringRequested);
   }
 
   resolveRiskWindow() {
@@ -168,20 +189,25 @@ export class RunModel {
     this.record('riskResolved', { regionId: this.region?.id, cohesionLoss: Number(loss.toFixed(2)) });
   }
 
-  startStraggler() {
+  startStraggler(availableEnergy = this.energy) {
     const freeRescue = this.hasUpgrade('wait-together') && !this.waitTogetherUsed;
+    const duration = freeRescue ? 5 : RUN_CONFIG.stragglerDuration;
+    if (freeRescue) this.waitTogetherUsed = true;
     this.straggler = {
-      remaining: this.rescueDuration,
+      remaining: duration,
+      duration,
       gatherHold: 0,
       freeRescue,
+      canRescue: freeRescue || availableEnergy >= RUN_CONFIG.rescueCost,
     };
     this.record('stragglerStarted', { regionId: this.region?.id, duration: this.straggler.remaining });
   }
 
   updateStraggler(dt, gathering) {
     this.straggler.remaining -= dt;
-    const canPay = this.straggler.freeRescue || this.energy >= RUN_CONFIG.rescueCost;
-    this.straggler.gatherHold = gathering && canPay ? this.straggler.gatherHold + dt : Math.max(0, this.straggler.gatherHold - dt * 1.5);
+    this.straggler.gatherHold = gathering && this.straggler.canRescue
+      ? this.straggler.gatherHold + dt
+      : Math.max(0, this.straggler.gatherHold - dt * 1.5);
     if (this.straggler.gatherHold >= RUN_CONFIG.rescueHold) {
       this.rescueStraggler();
       return;
@@ -192,7 +218,6 @@ export class RunModel {
   rescueStraggler() {
     if (!this.straggler) return false;
     if (!this.straggler.freeRescue) this.energy = clamp(this.energy - RUN_CONFIG.rescueCost, 0, this.maxEnergy);
-    else this.waitTogetherUsed = true;
     this.cohesion = 45;
     this.record('stragglerRescued', { regionId: this.region?.id, free: this.straggler.freeRescue });
     this.straggler = null;

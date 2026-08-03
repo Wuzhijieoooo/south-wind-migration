@@ -46,11 +46,12 @@ function hash(value) {
 export class WorldRenderer {
   constructor(canvas) {
     this.canvas = canvas;
-    this.context = canvas.getContext('2d', { alpha: false });
+    this.context = canvas.getContext('2d', { alpha: false, desynchronized: true });
     this.width = 1;
     this.height = 1;
     this.dpr = 1;
     this.quality = 1;
+    this.coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
     this.theme = 'warm';
     this.previousTheme = 'warm';
     this.themeBlend = 1;
@@ -60,11 +61,23 @@ export class WorldRenderer {
 
   resize() {
     const rect = this.canvas.getBoundingClientRect();
-    this.width = Math.max(1, rect.width || window.innerWidth);
-    this.height = Math.max(1, rect.height || window.innerHeight);
-    this.dpr = Math.min(window.devicePixelRatio || 1, this.quality > 0.6 ? 2 : 1.35);
-    this.canvas.width = Math.round(this.width * this.dpr);
-    this.canvas.height = Math.round(this.height * this.dpr);
+    const width = Math.max(1, rect.width || window.innerWidth);
+    const height = Math.max(1, rect.height || window.innerHeight);
+    const normalDpr = this.coarsePointer ? 1.6 : 2;
+    const dpr = Math.min(window.devicePixelRatio || 1, this.quality > 0.6 ? normalDpr : 1.25);
+    const pixelWidth = Math.round(width * dpr);
+    const pixelHeight = Math.round(height * dpr);
+    if (this.paperPattern
+      && pixelWidth === this.canvas.width
+      && pixelHeight === this.canvas.height
+      && Math.abs(width - this.width) < 0.5
+      && Math.abs(height - this.height) < 0.5) return;
+
+    this.width = width;
+    this.height = height;
+    this.dpr = dpr;
+    this.canvas.width = pixelWidth;
+    this.canvas.height = pixelHeight;
     this.context.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.paperPattern = this.createPaperPattern();
   }
@@ -446,8 +459,9 @@ export class WorldRenderer {
     context.save();
     context.lineCap = 'round';
     context.lineJoin = 'round';
-    context.shadowColor = alphaColor(palette.accent, 0.53);
-    context.shadowBlur = 12;
+    const shadowsEnabled = this.quality > 0.75 && !this.coarsePointer;
+    context.shadowColor = shadowsEnabled ? alphaColor(palette.accent, 0.53) : 'transparent';
+    context.shadowBlur = shadowsEnabled ? 12 : 0;
     for (let index = 1; index < points.length; index += 1) {
       const previous = points[index - 1];
       const point = points[index];
@@ -486,6 +500,7 @@ export class WorldRenderer {
       context.stroke();
     }
 
+    const shadowsEnabled = this.quality > 0.75 && !this.coarsePointer;
     for (const bird of flock.birds) {
       if (!bird.active && bird.alpha <= 0) continue;
       if (!bird.active) bird.alpha = Math.max(0, bird.alpha - 0.018);
@@ -501,8 +516,10 @@ export class WorldRenderer {
       context.translate(x, y);
       context.rotate(angle * 0.42);
       context.globalAlpha = bird.alpha;
-      context.shadowColor = this.theme === 'night' ? 'rgba(212, 229, 236, 0.28)' : 'rgba(45, 55, 53, 0.14)';
-      context.shadowBlur = this.theme === 'night' ? 10 : 5;
+      context.shadowColor = shadowsEnabled
+        ? (this.theme === 'night' ? 'rgba(212, 229, 236, 0.28)' : 'rgba(45, 55, 53, 0.14)')
+        : 'transparent';
+      context.shadowBlur = shadowsEnabled ? (this.theme === 'night' ? 10 : 5) : 0;
       context.strokeStyle = alphaColor(palette.ink, 0.6);
       context.lineWidth = 0.8;
 
@@ -530,7 +547,7 @@ export class WorldRenderer {
     if (model?.straggler) {
       const bird = flock.birds[straggler];
       if (bird) {
-        const progress = clamp(model.straggler.remaining / 5, 0, 1);
+        const progress = clamp(model.straggler.remaining / model.straggler.duration, 0, 1);
         context.strokeStyle = `rgba(182, 87, 72, ${0.45 + (1 - progress) * 0.4})`;
         context.lineWidth = 2.5;
         context.beginPath();

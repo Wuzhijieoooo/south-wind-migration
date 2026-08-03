@@ -46,6 +46,9 @@ describe('Flock', () => {
     const flock = new Flock({ count: 20, seed: 5 });
     flock.update(1 / 60, { companionCount: 20, straggler: { remaining: 2 } });
     expect(flock.stragglerIndex).not.toBeNull();
+    const departingIndex = flock.stragglerIndex;
+    flock.update(1 / 60, { companionCount: 19, straggler: null });
+    expect(flock.birds[departingIndex].active).toBe(false);
     flock.update(1 / 60, { companionCount: 20, straggler: null });
     expect(flock.stragglerIndex).toBeNull();
   });

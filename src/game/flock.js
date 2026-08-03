@@ -28,11 +28,25 @@ export class Flock {
   }
 
   setCompanionCount(count) {
-    this.birds.forEach((bird, index) => {
-      const shouldBeActive = index < count;
-      if (bird.active && !shouldBeActive) bird.alpha = Math.min(bird.alpha, 0.8);
-      bird.active = shouldBeActive;
-    });
+    const target = clamp(Math.round(count), 0, this.birds.length);
+    let activeBirds = this.birds.filter((bird) => bird.active);
+
+    while (activeBirds.length > target) {
+      const straggler = this.stragglerIndex === null ? null : this.birds[this.stragglerIndex];
+      const departing = straggler?.active ? straggler : activeBirds.at(-1);
+      departing.active = false;
+      departing.alpha = Math.min(departing.alpha, 0.8);
+      activeBirds = activeBirds.filter((bird) => bird !== departing);
+    }
+
+    if (activeBirds.length < target) {
+      for (const bird of this.birds) {
+        if (bird.active) continue;
+        bird.active = true;
+        activeBirds.push(bird);
+        if (activeBirds.length >= target) break;
+      }
+    }
   }
 
   setStraggler(active) {
@@ -79,8 +93,9 @@ export class Flock {
     this.center.y = clamp(this.center.y + hazardForce.y * dt, 0.11, 0.89);
 
     const activeBirds = this.birds.filter((bird) => bird.active);
-    for (const bird of activeBirds) {
-      const slot = this.getFormationSlot(bird.index, activeBirds.length);
+    for (let activeIndex = 0; activeIndex < activeBirds.length; activeIndex += 1) {
+      const bird = activeBirds[activeIndex];
+      const slot = this.getFormationSlot(activeIndex, activeBirds.length);
       const isStraggler = bird.index === this.stragglerIndex;
       const lag = isStraggler ? 0.16 : 0;
       const targetX = this.center.x + slot.x * this.spread - lag;

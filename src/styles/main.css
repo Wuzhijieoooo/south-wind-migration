@@ -303,6 +303,8 @@ button:focus-visible {
   flex-direction: column;
   justify-content: flex-end;
   padding: max(72px, 8vh) max(6vw, 28px) max(32px, env(safe-area-inset-bottom));
+  padding-left: max(6vw, calc(env(safe-area-inset-left) + 18px));
+  padding-right: max(6vw, calc(env(safe-area-inset-right) + 18px));
   background: rgba(29, 39, 39, 0.34);
   backdrop-filter: blur(7px);
 }
@@ -414,6 +416,8 @@ button:focus-visible {
   align-content: center;
   gap: 24px 64px;
   padding: 70px max(8vw, 46px);
+  padding-left: max(8vw, calc(env(safe-area-inset-left) + 24px));
+  padding-right: max(8vw, calc(env(safe-area-inset-right) + 24px));
   background: rgba(230, 235, 229, 0.84);
   backdrop-filter: blur(14px);
 }
@@ -698,7 +702,7 @@ button:focus-visible {
 }
 
 .debug-actions button {
-  min-height: 42px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -738,6 +742,7 @@ button:focus-visible {
 
   .hud {
     width: calc(100% - 260px);
+    max-width: 620px;
   }
 
   .title-screen {
@@ -762,7 +767,7 @@ button:focus-visible {
   }
 
   .choice-card p {
-    font-size: 12px;
+    font-size: 14px;
     line-height: 1.45;
   }
 
@@ -820,6 +825,10 @@ button:focus-visible {
     min-height: 126px;
   }
 
+  .choice-screen {
+    padding-bottom: max(20px, calc(env(safe-area-inset-bottom) + 12px));
+  }
+
   .journal-poem,
   .journal-path {
     display: none;
@@ -828,9 +837,73 @@ button:focus-visible {
   .journal-copy {
     grid-row: auto;
   }
+
+  .journal-screen {
+    gap: 12px 24px;
+    padding-top: 40px;
+    padding-bottom: max(24px, calc(env(safe-area-inset-bottom) + 14px));
+  }
+
+  .journal-copy .eyebrow {
+    margin-bottom: 8px;
+  }
+
+  .journal-copy h2 {
+    margin-bottom: 12px;
+    font-size: 28px;
+  }
+
+  .journal-stats div {
+    padding: 10px 6px;
+  }
 }
 
-@media (pointer: coarse) and (orientation: portrait) {
+@media (max-width: 700px) and (orientation: landscape) {
+  .choice-screen {
+    padding-left: max(16px, calc(env(safe-area-inset-left) + 12px));
+    padding-right: max(16px, calc(env(safe-area-inset-right) + 12px));
+  }
+
+  .choice-list {
+    gap: 8px;
+  }
+
+  .choice-heading h2 {
+    font-size: 26px;
+  }
+
+  .choice-card {
+    padding-right: 32px;
+    padding-left: 12px;
+  }
+
+  .choice-card svg {
+    right: 10px;
+  }
+
+  .energy-track {
+    width: 72px;
+  }
+
+  .hud-metrics {
+    gap: 10px;
+  }
+
+  .debug-panel {
+    top: 68px;
+    right: max(12px, env(safe-area-inset-right));
+    width: 220px;
+  }
+
+  .gather-button {
+    right: max(18px, calc(env(safe-area-inset-right) + 12px));
+    bottom: max(18px, calc(env(safe-area-inset-bottom) + 12px));
+    width: 76px;
+    height: 64px;
+  }
+}
+
+@media (orientation: portrait) and (max-width: 700px) {
   .rotate-screen {
     position: absolute;
     z-index: 50;

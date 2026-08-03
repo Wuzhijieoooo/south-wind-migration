@@ -17,12 +17,22 @@ import {
 const ICONS = { ChevronRight, FastForward, Gauge, Pause, Play, RotateCcw, Settings2, SkipForward, Users, Volume2, VolumeX, Wind };
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+export function formatDuration(duration) {
+  const totalSeconds = Math.max(0, Math.round(Number.isFinite(duration) ? duration : 0));
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`;
+}
+
+export function formatRouteNames(routes) {
+  return routes.length ? routes.map((route) => route.routeName ?? route.routeId).join(' · ') : '尚未经过岔路';
+}
+
 export class GameUI {
   constructor(root, handlers = {}) {
     this.root = root;
     this.handlers = handlers;
     this.toastTimer = null;
     this.regionTimer = null;
+    this.gatherPointerId = null;
     this.renderShell();
     this.collectElements();
     this.bindEvents();
@@ -175,11 +185,23 @@ export class GameUI {
     pauseButton.addEventListener('click', () => this.handlers.onPause?.());
     resumeButton.addEventListener('click', () => this.handlers.onResume?.());
     restartButton.addEventListener('click', () => this.handlers.onRestart?.());
-    const gatherOn = (event) => { event.preventDefault(); gatherButton.setPointerCapture?.(event.pointerId); this.handlers.onGather?.(true); };
-    const gatherOff = (event) => { event.preventDefault(); this.handlers.onGather?.(false); };
+    const gatherOn = (event) => {
+      event.preventDefault();
+      if (this.gatherPointerId !== null) return;
+      this.gatherPointerId = event.pointerId;
+      gatherButton.setPointerCapture?.(event.pointerId);
+      this.handlers.onGather?.(true);
+    };
+    const gatherOff = (event) => {
+      event.preventDefault();
+      if (event.pointerId !== this.gatherPointerId) return;
+      this.gatherPointerId = null;
+      this.handlers.onGather?.(false);
+    };
     gatherButton.addEventListener('pointerdown', gatherOn);
     gatherButton.addEventListener('pointerup', gatherOff);
     gatherButton.addEventListener('pointercancel', gatherOff);
+    gatherButton.addEventListener('lostpointercapture', gatherOff);
     gatherButton.addEventListener('pointerleave', (event) => { if (event.buttons === 0) gatherOff(event); });
     debugPanel.addEventListener('click', (event) => {
       const button = event.target.closest('[data-debug]');
@@ -196,6 +218,7 @@ export class GameUI {
   }
 
   showTitle(visible) {
+    if (visible) this.cancelGatherInput();
     this.elements.titleScreen.hidden = !visible;
     this.elements.hud.hidden = visible;
     this.elements.gatherButton.hidden = visible;
@@ -283,6 +306,7 @@ export class GameUI {
   }
 
   showJournal({ failed, companions, startedCompanions, best, routes, upgrades, duration }) {
+    this.cancelGatherInput();
     this.elements.journalEyebrow.textContent = failed ? '沿途停栖' : '迁徙记录';
     this.elements.journalTitle.textContent = failed ? '它们在这里等待下一阵南风' : '风抵达了雪岭';
     this.elements.journalPoem.textContent = failed
@@ -293,9 +317,9 @@ export class GameUI {
       <div><strong>${companions}</strong><span>抵达</span></div>
       <div><strong>${startedCompanions - companions}</strong><span>停栖</span></div>
       <div><strong>${best}</strong><span>最佳</span></div>
-      <div><strong>${Math.floor(duration / 60)}:${String(Math.round(duration % 60)).padStart(2, '0')}</strong><span>用时</span></div>
+      <div><strong>${formatDuration(duration)}</strong><span>用时</span></div>
     `;
-    const routeText = routes.length ? routes.map((route) => route.routeId).join(' · ') : '尚未经过岔路';
+    const routeText = formatRouteNames(routes);
     const upgradeText = upgrades.length ? upgrades.map((upgrade) => upgrade.name).join(' · ') : '尚未形成适应';
     this.elements.journalPath.innerHTML = `<p><span>航路</span>${routeText}</p><p><span>适应</span>${upgradeText}</p>`;
     this.elements.journalScreen.hidden = false;
@@ -310,5 +334,19 @@ export class GameUI {
 
   setDebugVisible(visible) {
     this.elements.debugPanel.hidden = !visible;
+  }
+
+  cancelGatherInput() {
+    if (this.gatherPointerId === null) return;
+    const pointerId = this.gatherPointerId;
+    this.gatherPointerId = null;
+    try {
+      if (this.elements.gatherButton.hasPointerCapture?.(pointerId)) {
+        this.elements.gatherButton.releasePointerCapture(pointerId);
+      }
+    } catch {
+      // Pointer capture may already be released during rotation or visibility changes.
+    }
+    this.handlers.onGather?.(false);
   }
 }

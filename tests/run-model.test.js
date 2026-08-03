@@ -18,6 +18,7 @@ describe('RunModel', () => {
     const run = new RunModel(1);
     run.startRegion(0);
     run.applyUpgrade('old-river');
+    expect(run.getRouteOption('safe').detail).toBe('绕行 · 体力 -4');
     const route = run.chooseRoute('safe');
     expect(route.energyCost).toBe(4);
     expect(run.energy).toBe(96);
@@ -60,6 +61,20 @@ describe('RunModel', () => {
     run.update(1.3, { gathering: true });
     expect(run.straggler).toBeNull();
     expect(run.energy).toBeGreaterThan(5);
+  });
+
+  it('uses wait-together only for the first straggler window in a region', () => {
+    const run = new RunModel(18);
+    run.startRegion(0);
+    run.applyUpgrade('wait-together');
+    run.cohesion = 0;
+    run.update(0.1, {});
+    expect(run.straggler.duration).toBe(5);
+    run.update(5, {});
+    run.cohesion = 0;
+    run.update(0.1, {});
+    expect(run.straggler.duration).toBe(2.5);
+    expect(run.straggler.freeRescue).toBe(false);
   });
 
   it('soft-fails when fewer than six companions remain', () => {

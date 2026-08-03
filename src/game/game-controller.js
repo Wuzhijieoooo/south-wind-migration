@@ -9,10 +9,18 @@ import { WorldRenderer } from './world-renderer.js';
 
 const FIXED_STEP = 1 / 60;
 const ROUTE_WINDOW_DURATION = 7;
+const ROUTE_CENTER_DEAD_ZONE = 0.1;
 const ARRIVAL_DURATION = 4;
 const AUDIO_STORAGE_KEY = 'south-wind-audio';
 const BEST_STORAGE_KEY = 'south-wind-best';
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+export function getTimedRouteChoice(centerY, safeTop, deadZone = ROUTE_CENTER_DEAD_ZONE) {
+  const offset = clamp(centerY, 0, 1) - 0.5;
+  if (Math.abs(offset) <= deadZone) return 'safe';
+  const choseTop = offset < 0;
+  return choseTop === safeTop ? 'safe' : 'risky';
+}
 
 function readStoredBoolean(key, fallback) {
   try {
@@ -81,6 +89,7 @@ export class GameController {
     this.lowFpsTime = 0;
     this.highFpsTime = 0;
     this.environment = this.emptyEnvironment();
+    this.orientationBlocked = this.isOrientationBlocked();
 
     this.onFrame = this.onFrame.bind(this);
     this.onResize = this.onResize.bind(this);
@@ -183,6 +192,7 @@ export class GameController {
     if (!this.canPause()) return;
     this.paused = Boolean(paused);
     this.setGathering(false);
+    if (this.paused) this.ui.cancelGatherInput();
     this.wind.cancel();
     this.accumulator = 0;
     this.ui.setPaused(this.paused);
@@ -201,6 +211,7 @@ export class GameController {
   }
 
   setGameplayControlsVisible(visible) {
+    if (!visible) this.ui.cancelGatherInput();
     this.ui.elements.gatherButton.hidden = !visible;
     this.ui.elements.pauseButton.hidden = !visible;
   }
@@ -257,8 +268,8 @@ export class GameController {
       active: true,
       remaining: ROUTE_WINDOW_DURATION,
       safeTop,
-      safe: this.model.region.safeRoute,
-      risky: this.model.region.riskyRoute,
+      safe: this.model.getRouteOption('safe'),
+      risky: this.model.getRouteOption('risky'),
     };
     this.model.phase = PHASES.ROUTE_CHOICE;
     this.activeRiskKey = null;
@@ -285,9 +296,7 @@ export class GameController {
 
     if (this.routeWindow.remaining <= 0) {
       const center = this.flock.getCenter();
-      const choseTop = center.y < 0.5;
-      const choseSafe = choseTop === this.routeWindow.safeTop;
-      this.resolveRoute(choseSafe ? 'safe' : 'risky');
+      this.resolveRoute(getTimedRouteChoice(center.y, this.routeWindow.safeTop));
     }
   }
 
@@ -345,7 +354,7 @@ export class GameController {
     this.visualTime += this.paused ? 0 : frameDt;
     this.updatePerformance(rawDt);
 
-    if (this.started && !this.paused && !this.choiceOpen && !this.journalShown) {
+    if (this.started && !this.paused && !this.choiceOpen && !this.journalShown && !this.orientationBlocked) {
       this.accumulator = Math.min(this.accumulator + frameDt, FIXED_STEP * 6);
       while (this.accumulator >= FIXED_STEP) {
         this.update(FIXED_STEP, timestamp / 1000);
@@ -355,7 +364,7 @@ export class GameController {
       this.accumulator = 0;
     }
 
-    this.render(frameDt, timestamp / 1000);
+    if (!this.orientationBlocked) this.render(frameDt, timestamp / 1000);
     this.frameId = requestAnimationFrame(this.onFrame);
   }
 
@@ -390,6 +399,7 @@ export class GameController {
       sharpness: this.wind.getInfluence().sharpness,
       safeCurrent: environment.safeCurrent.active,
     });
+    if (this.gathering && this.model.energy <= 0 && !this.model.straggler?.canRescue) this.setGathering(false);
     this.processModelEvents();
     this.updateRiskCue(environment.riskInfo);
     this.updateFlock(dt, environment);
@@ -412,7 +422,7 @@ export class GameController {
 
     if (this.model.phase === PHASES.FLIGHT) {
       const region = this.model.region;
-      if (!this.model.routeResolved && this.model.phaseTime >= region.routeAt) {
+      if (!this.model.routeResolved && this.model.phaseTime >= region.routeAt && !this.model.straggler) {
         this.openRouteWindow();
         return;
       }
@@ -605,7 +615,19 @@ export class GameController {
   }
 
   onResize() {
+    const blocked = this.isOrientationBlocked();
+    if (blocked && !this.orientationBlocked) {
+      this.setGathering(false);
+      this.ui.cancelGatherInput();
+      this.wind.cancel();
+      this.accumulator = 0;
+    }
+    this.orientationBlocked = blocked;
     this.renderer.resize();
+  }
+
+  isOrientationBlocked() {
+    return window.innerHeight > window.innerWidth && window.innerWidth <= 700;
   }
 
   onKeyDown(event) {
@@ -638,6 +660,7 @@ export class GameController {
   onPointerDown(event) {
     if (!this.canUseWind()) return;
     event.preventDefault();
+    if (this.wind.pointerDown) return;
     this.ui.canvas.setPointerCapture?.(event.pointerId);
     this.wind.begin(event.pointerId, this.normalizedPoint(event), performance.now() / 1000);
   }
@@ -655,6 +678,7 @@ export class GameController {
     return this.started
       && !this.paused
       && !this.choiceOpen
+      && !this.orientationBlocked
       && [PHASES.PRELUDE, PHASES.FLIGHT, PHASES.ROUTE_CHOICE].includes(this.model.phase);
   }
 
